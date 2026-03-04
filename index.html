@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw — A Deep Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0b0f;
+  --bg-card: #12141c;
+  --bg-card-hover: #181b26;
+  --border: #1e2130;
+  --border-accent: #2d3154;
+  --text: #c8cad6;
+  --text-muted: #6b6f87;
+  --text-bright: #edeef4;
+  --accent: #6c7bf7;
+  --accent-glow: #6c7bf720;
+  --accent2: #f77c6c;
+  --accent3: #6cf7a8;
+  --accent4: #f7d26c;
+  --accent5: #c76cf7;
+  --code-bg: #0d0f16;
+  --serif: 'Instrument Serif', Georgia, serif;
+  --sans: 'DM Sans', -apple-system, sans-serif;
+  --mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: var(--accent); color: var(--bg); }
+
+/* ── LAYOUT ── */
+.container { max-width: 920px; margin: 0 auto; padding: 0 2rem; }
+.wide-container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
+
+/* ── HERO ── */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -200px; left: 50%;
+  width: 800px; height: 800px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse, var(--accent-glow) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hero-content { position: relative; z-index: 1; }
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .4rem 1rem;
+  border: 1px solid var(--border-accent);
+  border-radius: 100px;
+  font-family: var(--mono);
+  font-size: .75rem;
+  color: var(--accent);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+  background: var(--bg-card);
+}
+
+.hero-badge::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--accent); }
+  50% { opacity: .6; box-shadow: 0 0 0 6px transparent; }
+}
+
+h1 {
+  font-family: var(--serif);
+  font-size: clamp(3rem, 7vw, 5.5rem);
+  font-weight: 400;
+  line-height: 1.05;
+  color: var(--text-bright);
+  margin-bottom: 1.5rem;
+  letter-spacing: -0.02em;
+}
+
+h1 em {
+  font-style: italic;
+  background: linear-gradient(135deg, var(--accent), var(--accent5));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-sub {
+  font-size: 1.15rem;
+  color: var(--text-muted);
+  max-width: 560px;
+  line-height: 1.7;
+  margin-bottom: 3rem;
+}
+
+/* ── NAV (TOC) ── */
+.toc {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+  background: rgba(10, 11, 15, 0.85);
+}
+
+.toc-inner {
+  display: flex;
+  gap: .25rem;
+  padding: .75rem 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.toc-inner::-webkit-scrollbar { display: none; }
+
+.toc a {
+  white-space: nowrap;
+  padding: .4rem .85rem;
+  border-radius: 6px;
+  font-size: .78rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  letter-spacing: .01em;
+  transition: all .2s;
+}
+
+.toc a:hover, .toc a.active {
+  color: var(--text-bright);
+  background: var(--bg-card);
+}
+
+/* ── SECTIONS ── */
+section { padding: 6rem 0; }
+
+.section-label {
+  font-family: var(--mono);
+  font-size: .7rem;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+h2 {
+  font-family: var(--serif);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 400;
+  color: var(--text-bright);
+  line-height: 1.15;
+  margin-bottom: 1.5rem;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-family: var(--sans);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin: 2.5rem 0 1rem;
+}
+
+h4 {
+  font-family: var(--mono);
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: .03em;
+  margin: 2rem 0 .75rem;
+}
+
+p { margin-bottom: 1.25rem; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+strong { color: var(--text-bright); font-weight: 600; }
+
+/* ── DIAGRAMS (SVG) ── */
+.diagram-wrap {
+  margin: 2.5rem 0;
+  padding: 2rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-x: auto;
+}
+
+.diagram-wrap svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+.diagram-caption {
+  text-align: center;
+  font-size: .82rem;
+  color: var(--text-muted);
+  margin-top: 1rem;
+  font-family: var(--mono);
+}
+
+/* ── CODE BLOCKS ── */
+.code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: .82rem;
+  line-height: 1.8;
+  color: var(--text);
+}
+
+.code-block .kw { color: var(--accent5); }
+.code-block .fn { color: var(--accent); }
+.code-block .str { color: var(--accent3); }
+.code-block .cmt { color: var(--text-muted); font-style: italic; }
+.code-block .var { color: var(--accent4); }
+.code-block .type { color: var(--accent2); }
+
+.code-label {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: .68rem;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: .15rem .6rem;
+  margin-bottom: .75rem;
+  letter-spacing: .05em;
+}
+
+/* ── STEP CARDS ── */
+.step-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 2rem 0;
+}
+
+.step-card {
+  background: var(--bg-card);
+  padding: 1.75rem 2rem;
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 1.25rem;
+  align-items: start;
+  transition: background .2s;
+}
+
+.step-card:hover { background: var(--bg-card-hover); }
+
+.step-num {
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: .9rem;
+  flex-shrink: 0;
+}
+
+.step-card:nth-child(1) .step-num { background: #6c7bf715; color: var(--accent); border: 1px solid #6c7bf730; }
+.step-card:nth-child(2) .step-num { background: #f77c6c15; color: var(--accent2); border: 1px solid #f77c6c30; }
+.step-card:nth-child(3) .step-num { background: #6cf7a815; color: var(--accent3); border: 1px solid #6cf7a830; }
+.step-card:nth-child(4) .step-num { background: #f7d26c15; color: var(--accent4); border: 1px solid #f7d26c30; }
+.step-card:nth-child(5) .step-num { background: #c76cf715; color: var(--accent5); border: 1px solid #c76cf730; }
+.step-card:nth-child(6) .step-num { background: #6c7bf715; color: var(--accent); border: 1px solid #6c7bf730; }
+.step-card:nth-child(7) .step-num { background: #f77c6c15; color: var(--accent2); border: 1px solid #f77c6c30; }
+.step-card:nth-child(8) .step-num { background: #6cf7a815; color: var(--accent3); border: 1px solid #6cf7a830; }
+.step-card:nth-child(9) .step-num { background: #f7d26c15; color: var(--accent4); border: 1px solid #f7d26c30; }
+.step-card:nth-child(10) .step-num { background: #c76cf715; color: var(--accent5); border: 1px solid #c76cf730; }
+
+.step-title {
+  font-weight: 600;
+  color: var(--text-bright);
+  margin-bottom: .35rem;
+  font-size: .95rem;
+}
+
+.step-desc {
+  color: var(--text-muted);
+  font-size: .88rem;
+  line-height: 1.65;
+}
+
+/* ── INFO CALLOUT ── */
+.callout {
+  border-left: 3px solid var(--accent);
+  background: var(--bg-card);
+  padding: 1.25rem 1.5rem;
+  border-radius: 0 10px 10px 0;
+  margin: 2rem 0;
+}
+
+.callout-warn { border-left-color: var(--accent4); }
+.callout-success { border-left-color: var(--accent3); }
+
+.callout p:last-child { margin-bottom: 0; }
+
+.callout-title {
+  font-family: var(--mono);
+  font-size: .75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  margin-bottom: .5rem;
+}
+
+/* ── COMPARISON TABLE ── */
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 2rem 0;
+  font-size: .88rem;
+}
+
+.comparison-table th,
+.comparison-table td {
+  text-align: left;
+  padding: .85rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.comparison-table th {
+  font-family: var(--mono);
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--text-muted);
+  background: var(--bg-card);
+}
+
+.comparison-table td { color: var(--text); }
+.comparison-table tr:hover td { background: var(--bg-card); }
+
+/* ── CONCEPT GRID ── */
+.concept-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 2rem 0;
+}
+
+.concept-card {
+  background: var(--bg-card);
+  padding: 1.75rem;
+  transition: background .2s;
+}
+
+.concept-card:hover { background: var(--bg-card-hover); }
+
+.concept-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.concept-card:nth-child(1) .concept-icon { background: #6c7bf720; }
+.concept-card:nth-child(2) .concept-icon { background: #f77c6c20; }
+.concept-card:nth-child(3) .concept-icon { background: #6cf7a820; }
+.concept-card:nth-child(4) .concept-icon { background: #f7d26c20; }
+.concept-card:nth-child(5) .concept-icon { background: #c76cf720; }
+.concept-card:nth-child(6) .concept-icon { background: #6c7bf720; }
+
+.concept-card h3 {
+  font-size: 1rem;
+  margin: 0 0 .5rem;
+}
+
+.concept-card p {
+  font-size: .85rem;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ── INLINE CODE ── */
+code {
+  font-family: var(--mono);
+  font-size: .82em;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  padding: .15em .45em;
+  border-radius: 4px;
+  color: var(--accent);
+}
+
+/* ── FOOTER ── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 3rem 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: .82rem;
+}
+
+footer a { color: var(--text-muted); }
+footer a:hover { color: var(--text-bright); }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 700px) {
+  .step-card { grid-template-columns: 1fr; gap: .75rem; }
+  .step-num { width: 36px; height: 36px; font-size: .78rem; }
+  section { padding: 3.5rem 0; }
+  .diagram-wrap { padding: 1rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ HERO -->
+<header class="hero">
+<div class="container hero-content">
+  <div class="hero-badge">Deep Technical Guide</div>
+  <h1>OpenClaw<br><em>🦞 The Agent Gateway</em></h1>
+  <p class="hero-sub">
+    A comprehensive guide to OpenClaw — the self-hosted, open-source gateway that connects
+    AI coding agents to any messaging platform. Architecture, configuration, skills, memory,
+    security, and multi-agent routing explained in full.
+  </p>
+</div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════ TOC -->
+<nav class="toc">
+<div class="wide-container">
+  <div class="toc-inner">
+    <a href="#overview">What Is OpenClaw?</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#channels">Channels</a>
+    <a href="#agents">Agents &amp; Skills</a>
+    <a href="#memory">Memory &amp; Sessions</a>
+    <a href="#security">Security</a>
+    <a href="#multi-agent">Multi-Agent Routing</a>
+    <a href="#config">Configuration</a>
+    <a href="#install">Quick Start</a>
+  </div>
+</div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════ 1. WHAT IS OPENCLAW? -->
+<section id="overview">
+<div class="container">
+  <div class="section-label">01 — Overview</div>
+  <h2>What Is OpenClaw?</h2>
+  <p>
+    Most AI coding agents — Claude Code, Pi, Codex — are powerful but ephemeral: they run in a
+    terminal, process a task, and exit. The moment you close the session, memory is lost, channels
+    go dark, and the agent is unreachable from your phone. <strong>OpenClaw</strong> solves this
+    by acting as a persistent <strong>gateway and deployment runtime</strong> that keeps your
+    agent alive 24/7, reachable from any messaging platform.
+  </p>
+  <p>
+    OpenClaw is <strong>self-hosted</strong> (runs on your hardware, your rules), <strong>open
+    source</strong> (MIT licensed, 188k+ GitHub stars as of early 2026), and built for
+    <strong>agent-native</strong> workloads — tool use, session persistence, memory, and
+    multi-platform routing.
+  </p>
+
+  <div class="callout">
+    <div class="callout-title" style="color: var(--accent);">The Core Idea</div>
+    <p>
+      OpenClaw is not the AI model and not the agent framework. It is the <em>infrastructure
+      layer between your agent and the world</em>: normalising incoming messages from WhatsApp,
+      Telegram, Discord, and 6+ more platforms; managing persistent sessions; enforcing security
+      policy; and injecting skills and memory into each turn.
+    </p>
+  </div>
+
+  <h3>What Problems Does It Solve?</h3>
+  <div class="step-grid">
+    <div class="step-card">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-title">Always-On Availability</div>
+        <div class="step-desc">The Gateway process runs as a daemon on your machine or a server. Send a WhatsApp message from your phone at midnight and get a response — no terminal needed.</div>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-title">Channel Normalisation</div>
+        <div class="step-desc">WhatsApp, Telegram, Discord, iMessage, Slack, Signal, and Teams all have different message formats, media types, and auth flows. OpenClaw adapts them all to a unified internal model so your agent code sees the same input regardless of source.</div>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-title">Session Isolation</div>
+        <div class="step-desc">Each conversation has its own isolated session store — history, tool state, and memory. A work conversation on Telegram doesn't bleed into a personal conversation on WhatsApp.</div>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">4</div>
+      <div>
+        <div class="step-title">Persistent Memory</div>
+        <div class="step-desc">Every turn is written to a JSONL transcript. MEMORY.md files accumulate durable knowledge. When context windows fill, OpenClaw runs compaction — summarising old history — so the agent retains the gist of past conversations indefinitely.</div>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">5</div>
+      <div>
+        <div class="step-title">Skill Injection</div>
+        <div class="step-desc">Skills — SKILL.md files with YAML frontmatter — are selectively injected into each turn's system prompt based on relevance signals. The agent gains capabilities without those instructions being present in every token count.</div>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">6</div>
+      <div>
+        <div class="step-title">Security &amp; Policy Enforcement</div>
+        <div class="step-desc">A 5-level tool policy chain (global → provider → agent → session → sandbox) governs what the agent can and cannot do. Allowlists restrict which senders can reach the agent. Approval gates halt dangerous actions for human review.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ 2. ARCHITECTURE -->
+<section id="architecture">
+<div class="container">
+  <div class="section-label">02 — Core Architecture</div>
+  <h2>The Gateway Architecture</h2>
+  <p>
+    OpenClaw's central component is the <strong>Gateway</strong> — a single long-lived Node.js
+    process that owns all messaging surfaces, exposes a WebSocket API and browser Control UI,
+    and emits system events like <code>cron</code> and <code>heartbeat</code>. Everything flows
+    through it.
+  </p>
+
+  <!-- ARCHITECTURE DIAGRAM -->
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 760 340" xmlns="http://www.w3.org/2000/svg" fill="none">
+      <pattern id="dots-oc" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+        <circle cx="1" cy="1" r=".5" fill="#1e2130"/>
+      </pattern>
+      <rect width="760" height="340" fill="url(#dots-oc)"/>
+
+      <!-- Channel inputs on left -->
+      <g>
+        <rect x="20" y="30" width="120" height="34" rx="6" fill="#12141c" stroke="#2d3154"/>
+        <text x="80" y="52" text-anchor="middle" fill="#c8cad6" font-family="DM Sans,sans-serif" font-size="11">WhatsApp</text>
+        <rect x="20" y="76" width="120" height="34" rx="6" fill="#12141c" stroke="#2d3154"/>
+        <text x="80" y="98" text-anchor="middle" fill="#c8cad6" font-family="DM Sans,sans-serif" font-size="11">Telegram</text>
+        <rect x="20" y="122" width="120" height="34" rx="6" fill="#12141c" stroke="#2d3154"/>
+        <text x="80" y="144" text-anchor="middle" fill="#c8cad6" font-family="DM Sans,sans-serif" font-size="11">Discord</text>
+        <rect x="20" y="168" width="120" height="34" rx="6" fill="#12141c" stroke="#2d3154"/>
+        <text x="80" y="190" text-anchor="middle" fill="#c8cad6" font-family="DM Sans,sans-serif" font-size="11">iMessage</text>
+        <rect x="20" y="214" width="120" height="34" rx="6" fill="#12141c" stroke="#2d3154"/>
+        <text x="80" y="236" text-anchor="middle" fill="#c8cad6" font-family="DM Sans,sans-serif" font-size="11">Slack / Signal</text>
+        <rect x="20" y="260" width="120" height="34" rx="6" fill="#12141c" stroke="#1e2130" stroke-dasharray="4"/>
+        <text x="80" y="282" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="11">Plugin channels</text>
+        <text x="80" y="320" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="9">Incoming messages</text>
+      </g>
+
+      <!-- Arrows in -->
+      <g stroke="#2d3154" stroke-width="1.5" marker-end="url(#arr)">
+        <defs>
+          <marker id="arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#2d3154"/>
+          </marker>
+          <marker id="arr2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#6c7bf7"/>
+          </marker>
+        </defs>
+        <line x1="140" y1="47" x2="238" y2="115"/>
+        <line x1="140" y1="93" x2="238" y2="130"/>
+        <line x1="140" y1="139" x2="238" y2="155"/>
+        <line x1="140" y1="185" x2="238" y2="175"/>
+        <line x1="140" y1="231" x2="238" y2="195"/>
+        <line x1="140" y1="277" x2="238" y2="215"/>
+      </g>
+
+      <!-- Gateway box (centre) -->
+      <rect x="240" y="80" width="200" height="180" rx="10" fill="#12141c" stroke="#6c7bf7" stroke-width="1.5"/>
+      <text x="340" y="108" text-anchor="middle" fill="#6c7bf7" font-family="JetBrains Mono,monospace" font-size="9" letter-spacing="2">GATEWAY</text>
+      <text x="340" y="130" text-anchor="middle" fill="#edeef4" font-family="DM Sans,sans-serif" font-size="13" font-weight="600">OpenClaw</text>
+      <text x="340" y="155" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="10">Channel adapters</text>
+      <text x="340" y="173" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="10">Session &amp; routing</text>
+      <text x="340" y="191" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="10">Security policy</text>
+      <text x="340" y="209" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="10">Memory &amp; skills</text>
+      <text x="340" y="227" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="10">Lane queue</text>
+      <text x="340" y="248" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="10">WebSocket / Control UI</text>
+
+      <!-- Arrows out to agent -->
+      <g stroke="#6c7bf7" stroke-width="1.5" marker-end="url(#arr2)">
+        <line x1="440" y1="150" x2="538" y2="120"/>
+        <line x1="440" y1="195" x2="538" y2="195"/>
+        <line x1="440" y1="220" x2="538" y2="265"/>
+      </g>
+
+      <!-- Agent boxes on right -->
+      <rect x="540" y="90" width="140" height="50" rx="6" fill="#12141c" stroke="#c76cf7"/>
+      <text x="610" y="112" text-anchor="middle" fill="#c76cf7" font-family="DM Sans,sans-serif" font-size="11" font-weight="600">Agent A</text>
+      <text x="610" y="130" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="9">workspace + skills</text>
+
+      <rect x="540" y="170" width="140" height="50" rx="6" fill="#12141c" stroke="#c76cf7"/>
+      <text x="610" y="192" text-anchor="middle" fill="#c76cf7" font-family="DM Sans,sans-serif" font-size="11" font-weight="600">Agent B</text>
+      <text x="610" y="210" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="9">workspace + skills</text>
+
+      <rect x="540" y="245" width="140" height="50" rx="6" fill="#12141c" stroke="#c76cf7"/>
+      <text x="610" y="267" text-anchor="middle" fill="#c76cf7" font-family="DM Sans,sans-serif" font-size="11" font-weight="600">Agent C</text>
+      <text x="610" y="285" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="9">workspace + skills</text>
+
+      <text x="610" y="320" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="9">LLM API calls per turn</text>
+    </svg>
+    <div class="diagram-caption">Fig 1 — OpenClaw Gateway: channels in, isolated agents out</div>
+  </div>
+
+  <h3>Key Architectural Properties</h3>
+  <div class="concept-grid">
+    <div class="concept-card">
+      <div class="concept-icon">🔄</div>
+      <h3>Single Daemon Process</h3>
+      <p>One Node.js Gateway process handles all channels simultaneously. Installed as a system daemon (<code>openclaw onboard --install-daemon</code>) so it survives reboots and restarts automatically.</p>
+    </div>
+    <div class="concept-card">
+      <div class="concept-icon">🌐</div>
+      <h3>Control UI</h3>
+      <p>A browser dashboard at <code>http://127.0.0.1:18789/</code> provides chat, session management, configuration editing, and live node status. Accessible remotely via Tailscale or SSH tunnel.</p>
+    </div>
+    <div class="concept-card">
+      <div class="concept-icon">📱</div>
+      <h3>Mobile Nodes</h3>
+      <p>iOS and Android nodes extend OpenClaw with Canvas, camera/screen capture, and device actions — enabling workflows that require visual context from a phone.</p>
+    </div>
+    <div class="concept-card">
+      <div class="concept-icon">🔌</div>
+      <h3>Plugin Architecture</h3>
+      <p>Additional channels (Mattermost, Teams, custom integrations) are added as extension packages installed alongside the core Gateway, keeping the core lean.</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ 3. CHANNELS -->
+<section id="channels">
+<div class="container">
+  <div class="section-label">03 — Messaging Channels</div>
+  <h2>Channel Adapters</h2>
+  <p>
+    OpenClaw's channel adapters normalise the wildly different APIs of each messaging platform
+    into a single internal message format. Each adapter handles authentication, media transcoding,
+    group/DM routing, and reconnection logic — your agent code sees a clean, uniform interface.
+  </p>
+
+  <div class="callout callout-warn">
+    <div class="callout-title" style="color: var(--accent4);">Channel Setup Complexity</div>
+    <p>
+      Each channel requires its own authentication flow: WhatsApp uses QR code pairing,
+      Telegram and Discord use bot tokens, iMessage uses a macOS node. The OpenClaw onboarding
+      wizard (<code>openclaw onboard</code>) guides you through each one interactively.
+    </p>
+  </div>
+
+  <table class="comparison-table">
+    <thead>
+      <tr>
+        <th>Channel</th>
+        <th>Auth Method</th>
+        <th>DM Support</th>
+        <th>Group Support</th>
+        <th>Media</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>WhatsApp</strong></td>
+        <td>QR code pairing</td>
+        <td>✓</td>
+        <td>✓ (with mention rules)</td>
+        <td>Images, audio, docs</td>
+      </tr>
+      <tr>
+        <td><strong>Telegram</strong></td>
+        <td>Bot token</td>
+        <td>✓</td>
+        <td>✓</td>
+        <td>Images, audio, docs</td>
+      </tr>
+      <tr>
+        <td><strong>Discord</strong></td>
+        <td>Bot token</td>
+        <td>✓</td>
+        <td>✓</td>
+        <td>Images, attachments</td>
+      </tr>
+      <tr>
+        <td><strong>iMessage</strong></td>
+        <td>macOS node</td>
+        <td>✓</td>
+        <td>✓</td>
+        <td>Images, audio</td>
+      </tr>
+      <tr>
+        <td><strong>Slack / Signal</strong></td>
+        <td>App token / linked</td>
+        <td>✓</td>
+        <td>✓</td>
+        <td>Images, files</td>
+      </tr>
+      <tr>
+        <td><strong>Mattermost</strong> (plugin)</td>
+        <td>Bot token</td>
+        <td>✓</td>
+        <td>✓</td>
+        <td>Images, files</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Group Chat Controls</h3>
+  <p>
+    In group chats, OpenClaw can be configured to respond only when explicitly mentioned. The
+    <code>requireMention</code> flag and custom mention patterns (e.g. <code>@openclaw</code>)
+    prevent the agent from interrupting every conversation in a busy group.
+  </p>
+  <div class="code-label">~/.openclaw/openclaw.json</div>
+  <div class="code-block">
+<span class="var">{</span>
+  <span class="str">"channels"</span>: {
+    <span class="str">"whatsapp"</span>: {
+      <span class="str">"allowFrom"</span>: [<span class="str">"+15555550123"</span>, <span class="str">"+447700900456"</span>],
+      <span class="str">"groups"</span>: { <span class="str">"*"</span>: { <span class="str">"requireMention"</span>: <span class="kw">true</span> } }
+    }
+  },
+  <span class="str">"messages"</span>: {
+    <span class="str">"groupChat"</span>: { <span class="str">"mentionPatterns"</span>: [<span class="str">"@openclaw"</span>] }
+  }
+<span class="var">}</span>
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ 4. AGENTS & SKILLS -->
+<section id="agents">
+<div class="container">
+  <div class="section-label">04 — Agents &amp; Skills</div>
+  <h2>Agents &amp; the Skill System</h2>
+  <p>
+    In OpenClaw terminology, an <strong>agent</strong> is an isolated AI persona with its own
+    workspace, configuration files, session store, and auth credentials. The Gateway can host
+    one or many agents simultaneously, each completely walled off from the others.
+  </p>
+
+  <h3>The Agent Workspace</h3>
+  <p>
+    Each agent has a dedicated workspace directory (default <code>~/.openclaw/workspace</code>)
+    and a private state directory under <code>~/.openclaw/agents/&lt;agentId&gt;/</code>. The
+    key files that define an agent's identity and behaviour are:
+  </p>
+  <div class="concept-grid">
+    <div class="concept-card">
+      <div class="concept-icon">📄</div>
+      <h3>AGENTS.md</h3>
+      <p>The agent's system instructions — its persona, capabilities, and behavioural rules. Injected into every turn's context. The primary prompt engineering surface.</p>
+    </div>
+    <div class="concept-card">
+      <div class="concept-icon">💠</div>
+      <h3>SOUL.md</h3>
+      <p>An optional deeper personality layer — values, tone, communication style. Kept separate from operational instructions so each can evolve independently.</p>
+    </div>
+    <div class="concept-card">
+      <div class="concept-icon">👤</div>
+      <h3>USER.md</h3>
+      <p>Persistent knowledge about the user — preferences, context, working style. Updated over time as the agent learns. Injected as background context each turn.</p>
+    </div>
+    <div class="concept-card">
+      <div class="concept-icon">🧠</div>
+      <h3>MEMORY.md / memory/</h3>
+      <p>Durable knowledge distilled from past conversations. The agent writes lasting notes to dated memory files, which are merged back into future contexts.</p>
+    </div>
+  </div>
+
+  <h3>Skills</h3>
+  <p>
+    Skills are modular capability extensions — each is a <strong>SKILL.md file</strong> with
+    a YAML frontmatter block that describes when to activate, and a body that contains the
+    instructions, tool definitions, or workflow templates the agent uses when that skill fires.
+  </p>
+  <p>
+    Skills live in the workspace's <code>skills/</code> folder (per-agent) or in
+    <code>~/.openclaw/skills/</code> (shared across all agents). They are selectively injected
+    per-turn based on relevance — keeping system prompts lean for most turns while unlocking
+    rich capabilities on demand.
+  </p>
+
+  <div class="callout callout-success">
+    <div class="callout-title" style="color: var(--accent3);">ClawHub — Community Skills Registry</div>
+    <p>
+      OpenClaw's public registry, <strong>ClawHub</strong>, hosts over 13,700 community-built
+      skills as of early 2026 — everything from Google Ads management to task queue integration
+      to multi-agent team orchestration. Skills can be installed by pasting a skill's GitHub
+      URL directly into an agent chat session; the agent handles installation automatically.
+    </p>
+  </div>
+
+  <div class="code-label">Example SKILL.md frontmatter</div>
+  <div class="code-block">
+<span class="cmt">---</span>
+<span class="var">name</span>: <span class="str">github-pr-review</span>
+<span class="var">description</span>: <span class="str">Review and comment on GitHub pull requests</span>
+<span class="var">triggers</span>:
+  - <span class="str">pull request</span>
+  - <span class="str">PR review</span>
+  - <span class="str">code review</span>
+<span class="var">tools</span>:
+  - <span class="str">gh</span>
+<span class="var">version</span>: <span class="str">1.2.0</span>
+<span class="cmt">---</span>
+
+<span class="cmt"># GitHub PR Review Skill</span>
+
+<span class="kw">When the user asks to review a PR, use the `gh` CLI to:</span>
+1. Fetch the diff with `gh pr diff &lt;number&gt;`
+2. Read existing comments with `gh pr view &lt;number&gt; --comments`
+...
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ 5. MEMORY & SESSIONS -->
+<section id="memory">
+<div class="container">
+  <div class="section-label">05 — Memory &amp; Sessions</div>
+  <h2>Memory, Sessions &amp; Context Management</h2>
+  <p>
+    One of OpenClaw's core differentiators is that it treats memory as a first-class concern
+    rather than delegating it entirely to the model's context window. A multi-layered memory
+    architecture ensures the agent is never starting from scratch.
+  </p>
+
+  <!-- MEMORY LAYERS DIAGRAM -->
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 700 260" xmlns="http://www.w3.org/2000/svg" fill="none">
+      <pattern id="dots-mem" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+        <circle cx="1" cy="1" r=".5" fill="#1e2130"/>
+      </pattern>
+      <rect width="700" height="260" fill="url(#dots-mem)"/>
+
+      <!-- Layer boxes, top = most volatile -->
+      <rect x="40" y="20" width="620" height="48" rx="8" fill="#12141c" stroke="#6c7bf7" stroke-width="1.5"/>
+      <text x="60" y="42" fill="#6c7bf7" font-family="JetBrains Mono,monospace" font-size="9" letter-spacing="1">LAYER 1</text>
+      <text x="60" y="58" fill="#edeef4" font-family="DM Sans,sans-serif" font-size="11" font-weight="600">Active context window — current turn + recent history (volatile)</text>
+
+      <rect x="40" y="80" width="620" height="48" rx="8" fill="#12141c" stroke="#f7d26c" stroke-width="1.5"/>
+      <text x="60" y="102" fill="#f7d26c" font-family="JetBrains Mono,monospace" font-size="9" letter-spacing="1">LAYER 2</text>
+      <text x="60" y="118" fill="#edeef4" font-family="DM Sans,sans-serif" font-size="11" font-weight="600">JSONL session transcripts — full turn-by-turn audit log (persistent, per-session)</text>
+
+      <rect x="40" y="140" width="620" height="48" rx="8" fill="#12141c" stroke="#6cf7a8" stroke-width="1.5"/>
+      <text x="60" y="162" fill="#6cf7a8" font-family="JetBrains Mono,monospace" font-size="9" letter-spacing="1">LAYER 3</text>
+      <text x="60" y="178" fill="#edeef4" font-family="DM Sans,sans-serif" font-size="11" font-weight="600">MEMORY.md + dated memory files — distilled durable knowledge (always injected)</text>
+
+      <rect x="40" y="200" width="620" height="48" rx="8" fill="#12141c" stroke="#c76cf7" stroke-width="1.5"/>
+      <text x="60" y="222" fill="#c76cf7" font-family="JetBrains Mono,monospace" font-size="9" letter-spacing="1">LAYER 4</text>
+      <text x="60" y="238" fill="#edeef4" font-family="DM Sans,sans-serif" font-size="11" font-weight="600">USER.md / AGENTS.md — static identity and preferences (injected every turn)</text>
+    </svg>
+    <div class="diagram-caption">Fig 2 — OpenClaw memory layers: volatile context at top, permanent identity at bottom</div>
+  </div>
+
+  <h3>Context Window Management &amp; Compaction</h3>
+  <p>
+    Long-running agents inevitably approach context window limits. OpenClaw's
+    <strong>Context Window Guard</strong> monitors token counts and triggers a compaction
+    pass before the window overflows. During compaction, the agent is prompted to:
+  </p>
+  <div class="step-grid">
+    <div class="step-card">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-title">Write lasting notes to memory</div>
+        <div class="step-desc">The agent identifies key facts, decisions, and context from the current session and writes them to a dated memory file (e.g. <code>memory/2026-03-04.md</code>).</div>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-title">Summarise old tool outputs</div>
+        <div class="step-desc">Large tool responses (file reads, API results) that were appended to context are replaced with compact summaries, freeing up tokens without losing semantic content.</div>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-title">Resume with a clean window</div>
+        <div class="step-desc">Conversation continues from the compacted state. The agent retains full long-term memory via Layer 3 files while gaining a fresh context window.</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Session Isolation</h3>
+  <p>
+    Each <code>agentId</code> gets a dedicated session store under
+    <code>~/.openclaw/agents/&lt;agentId&gt;/sessions/</code>. Sessions are keyed by sender
+    identity (e.g. phone number, Discord user ID). Never reuse <code>agentDir</code> across
+    agents — this causes auth and session collisions. If you want to share credentials, explicitly
+    copy <code>auth-profiles.json</code> to the target agent's directory.
+  </p>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ 6. SECURITY -->
+<section id="security">
+<div class="container">
+  <div class="section-label">06 — Security &amp; Policy</div>
+  <h2>Security Model</h2>
+  <p>
+    OpenClaw's security model is layered and explicit. Rather than trusting the model to stay
+    within safe boundaries by prompt alone, it enforces policy at the infrastructure level —
+    before the agent even sees a request, and after it produces an action.
+  </p>
+
+  <h3>The 5-Level Tool Policy Chain</h3>
+  <p>
+    Every tool invocation is evaluated against a chain of policy definitions, from broadest
+    to most specific. Each level can permit, deny, or require approval. The most restrictive
+    applicable rule wins.
+  </p>
+
+  <!-- POLICY CHAIN DIAGRAM -->
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 680 80" xmlns="http://www.w3.org/2000/svg" fill="none">
+      <pattern id="dots-sec" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+        <circle cx="1" cy="1" r=".5" fill="#1e2130"/>
+      </pattern>
+      <rect width="680" height="80" fill="url(#dots-sec)"/>
+
+      <defs>
+        <marker id="arrs" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+          <path d="M0,0 L5,2.5 L0,5 Z" fill="#2d3154"/>
+        </marker>
+      </defs>
+
+      <rect x="10"  y="20" width="100" height="40" rx="6" fill="#12141c" stroke="#6c7bf7"/>
+      <text x="60"  y="44" text-anchor="middle" fill="#6c7bf7" font-family="DM Sans,sans-serif" font-size="10" font-weight="600">Global</text>
+
+      <line x1="110" y1="40" x2="138" y2="40" stroke="#2d3154" marker-end="url(#arrs)"/>
+
+      <rect x="140" y="20" width="100" height="40" rx="6" fill="#12141c" stroke="#f77c6c"/>
+      <text x="190" y="44" text-anchor="middle" fill="#f77c6c" font-family="DM Sans,sans-serif" font-size="10" font-weight="600">Provider</text>
+
+      <line x1="240" y1="40" x2="268" y2="40" stroke="#2d3154" marker-end="url(#arrs)"/>
+
+      <rect x="270" y="20" width="100" height="40" rx="6" fill="#12141c" stroke="#6cf7a8"/>
+      <text x="320" y="44" text-anchor="middle" fill="#6cf7a8" font-family="DM Sans,sans-serif" font-size="10" font-weight="600">Agent</text>
+
+      <line x1="370" y1="40" x2="398" y2="40" stroke="#2d3154" marker-end="url(#arrs)"/>
+
+      <rect x="400" y="20" width="100" height="40" rx="6" fill="#12141c" stroke="#f7d26c"/>
+      <text x="450" y="44" text-anchor="middle" fill="#f7d26c" font-family="DM Sans,sans-serif" font-size="10" font-weight="600">Session</text>
+
+      <line x1="500" y1="40" x2="528" y2="40" stroke="#2d3154" marker-end="url(#arrs)"/>
+
+      <rect x="530" y="20" width="100" height="40" rx="6" fill="#12141c" stroke="#c76cf7"/>
+      <text x="580" y="44" text-anchor="middle" fill="#c76cf7" font-family="DM Sans,sans-serif" font-size="10" font-weight="600">Sandbox</text>
+
+      <text x="340" y="75" text-anchor="middle" fill="#6b6f87" font-family="DM Sans,sans-serif" font-size="9">Most restrictive applicable rule wins</text>
+    </svg>
+    <div class="diagram-caption">Fig 3 — 5-level tool policy chain evaluated on every tool invocation</div>
+  </div>
+
+  <h3>Allowlists &amp; Access Control</h3>
+  <p>
+    The <code>allowFrom</code> config restricts which sender identities can reach each channel.
+    For example, a WhatsApp agent can be locked to a specific phone number or list of numbers —
+    preventing anyone who discovers the bot number from interacting with it.
+  </p>
+
+  <h3>Lane Queues</h3>
+  <p>
+    Within a session, requests are serialised through a <strong>lane queue</strong> by default.
+    This prevents race conditions when a user sends multiple messages in rapid succession — each
+    is processed in order, with the previous tool chain fully complete before the next begins.
+    Parallelism is an opt-in configuration for workloads explicitly designed to be safe.
+  </p>
+
+  <h3>Approval Gates</h3>
+  <p>
+    High-risk actions — file deletions, API calls with side effects, financial operations — can
+    be flagged to require explicit human approval before execution. The agent pauses, surfaces the
+    pending action in the Control UI, and waits for a confirm/deny response. This is the
+    production equivalent of <em>human-in-the-loop</em> guardrails.
+  </p>
+
+  <div class="callout callout-warn">
+    <div class="callout-title" style="color: var(--accent4);">Self-Hosted Means Your Responsibility</div>
+    <p>
+      Because OpenClaw runs on your hardware and uses your API keys, you are responsible for
+      securing the Gateway host, managing model API keys, and configuring appropriate allowlists.
+      The default configuration trusts all local connections — tighten this before exposing the
+      Gateway to the internet or a remote access tunnel.
+    </p>
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ 7. MULTI-AGENT ROUTING -->
+<section id="multi-agent">
+<div class="container">
+  <div class="section-label">07 — Multi-Agent Routing</div>
+  <h2>Multi-Agent Routing</h2>
+  <p>
+    OpenClaw's "multi-agent" capability is best understood as <strong>multi-persona routing</strong>:
+    running multiple isolated agent brains behind different identities or channels. A "work" agent
+    on Telegram and a "personal" agent on WhatsApp coexist within the same Gateway but remain
+    fully isolated — different workspaces, different sessions, different credentials.
+  </p>
+
+  <div class="callout">
+    <div class="callout-title" style="color: var(--accent);">Important Distinction</div>
+    <p>
+      This is fundamentally different from the orchestration patterns in frameworks like LangGraph
+      or the OpenAI Agents SDK, where multiple agents <em>collaborate</em> on a shared task via
+      handoffs and tool calls. OpenClaw agents <strong>do not talk to each other by default</strong>
+      — they are isolated personas, not collaborating nodes in a graph. Collaborative multi-agent
+      orchestration happens <em>inside</em> one agent's tool use, not between OpenClaw agents.
+    </p>
+  </div>
+
+  <h3>Per-Agent Isolation</h3>
+  <p>Each agent in the Gateway gets its own completely separate:</p>
+  <div class="concept-grid">
+    <div class="concept-card">
+      <div class="concept-icon">📁</div>
+      <h3>Workspace</h3>
+      <p>Separate working directory with its own AGENTS.md, SOUL.md, USER.md, and skills/ folder. No shared file system by default.</p>
+    </div>
+    <div class="concept-card">
+      <div class="concept-icon">🗂️</div>
+      <h3>Session Store</h3>
+      <p>Chat history, routing state, and tool results stored under a dedicated agentId path. Auth profiles are never shared automatically.</p>
+    </div>
+    <div class="concept-card">
+      <div class="concept-icon">🔑</div>
+      <h3>Auth Profiles</h3>
+      <p>Each agent maintains its own auth-profiles.json. To share credentials between agents, explicitly copy the file — no implicit credential sharing.</p>
+    </div>
+    <div class="concept-card">
+      <div class="concept-icon">📣</div>
+      <h3>Channel Bindings</h3>
+      <p>Channels are bound to specific agentIds. Multiple agents can share a channel (e.g. WhatsApp) by routing on sender identity, but each responds from its own brain.</p>
+    </div>
+  </div>
+
+  <h3>Enabling Agent-to-Agent Communication</h3>
+  <p>
+    For true collaboration — one OpenClaw agent delegating work to another — the community has
+    built skills like <code>agent-team-orchestration</code> and the <code>agentToAgent</code>
+    tool. These enable patterns like: a planner agent dispatching tasks to specialist agents
+    (coder, writer, reviewer) via a shared message queue or channel binding, with results
+    flowing back to the orchestrator. This is a skill-level capability, not a built-in Gateway
+    primitive.
+  </p>
+
+  <div class="code-label">agents list in openclaw.json</div>
+  <div class="code-block">
+<span class="var">{</span>
+  <span class="str">"agents"</span>: {
+    <span class="str">"list"</span>: [
+      {
+        <span class="str">"id"</span>: <span class="str">"work"</span>,
+        <span class="str">"workspace"</span>: <span class="str">"~/.openclaw/workspaces/work"</span>,
+        <span class="str">"agentDir"</span>: <span class="str">"~/.openclaw/agents/work"</span>
+      },
+      {
+        <span class="str">"id"</span>: <span class="str">"personal"</span>,
+        <span class="str">"workspace"</span>: <span class="str">"~/.openclaw/workspaces/personal"</span>,
+        <span class="str">"agentDir"</span>: <span class="str">"~/.openclaw/agents/personal"</span>
+      }
+    ]
+  },
+  <span class="str">"channels"</span>: {
+    <span class="str">"telegram"</span>: {
+      <span class="str">"accounts"</span>: { <span class="str">"work-bot"</span>: { <span class="str">"token"</span>: <span class="str">"..."</span> } }
+    },
+    <span class="str">"whatsapp"</span>: { <span class="var">/* personal agent */</span> }
+  }
+<span class="var">}</span>
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ 8. CONFIG -->
+<section id="config">
+<div class="container">
+  <div class="section-label">08 — Configuration Reference</div>
+  <h2>Configuration</h2>
+  <p>
+    All Gateway configuration lives in a single JSON file at
+    <code>~/.openclaw/openclaw.json</code> (or the path set by
+    <code>OPENCLAW_CONFIG_PATH</code>). The file is hot-reloaded — most changes take effect
+    without a Gateway restart.
+  </p>
+
+  <div class="callout callout-success">
+    <div class="callout-title" style="color: var(--accent3);">Start Minimal</div>
+    <p>
+      If you do nothing, OpenClaw uses its bundled Pi binary in RPC mode with per-sender sessions.
+      The onboarding wizard generates a valid baseline config. Start from that and add complexity
+      only when you need it.
+    </p>
+  </div>
+
+  <h3>Key Configuration Sections</h3>
+  <table class="comparison-table">
+    <thead>
+      <tr>
+        <th>Section</th>
+        <th>What It Controls</th>
+        <th>Key Fields</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>agents.defaults</code></td>
+        <td>Default model, context pruning, compaction policy for all agents</td>
+        <td><code>model.primary</code>, <code>contextPruning</code>, <code>compaction</code></td>
+      </tr>
+      <tr>
+        <td><code>agents.list</code></td>
+        <td>Per-agent workspace paths, agentId, overrides</td>
+        <td><code>id</code>, <code>workspace</code>, <code>agentDir</code></td>
+      </tr>
+      <tr>
+        <td><code>channels.*</code></td>
+        <td>Channel-specific auth, allowlists, group rules</td>
+        <td><code>allowFrom</code>, <code>requireMention</code>, <code>accounts</code></td>
+      </tr>
+      <tr>
+        <td><code>gateway.auth</code></td>
+        <td>Token auth for the Control UI and WebSocket API</td>
+        <td><code>token</code></td>
+      </tr>
+      <tr>
+        <td><code>skills.install.nodeManager</code></td>
+        <td>Package manager used for skill installation</td>
+        <td><code>npm</code> / <code>pnpm</code></td>
+      </tr>
+      <tr>
+        <td><code>update.channel</code></td>
+        <td>OpenClaw update channel</td>
+        <td><code>stable</code> / <code>beta</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Context Pruning Configuration</h3>
+  <p>
+    The <code>contextPruning</code> block under <code>agents.defaults</code> controls how
+    OpenClaw manages context window pressure. Key fields:
+  </p>
+  <div class="code-block">
+<span class="str">"contextPruning"</span>: {
+  <span class="str">"mode"</span>: <span class="str">"cache-ttl"</span>,         <span class="cmt">// prune by age</span>
+  <span class="str">"ttl"</span>: <span class="str">"45m"</span>,               <span class="cmt">// keep last 45 minutes</span>
+  <span class="str">"keepLastAssistants"</span>: <span class="var">2</span>,  <span class="cmt">// always keep 2 most recent assistant turns</span>
+  <span class="str">"softTrim"</span>: {
+    <span class="str">"maxChars"</span>: <span class="var">2500</span>,       <span class="cmt">// trim tool outputs over 2500 chars</span>
+    <span class="str">"headChars"</span>: <span class="var">900</span>,       <span class="cmt">// keep first 900 chars</span>
+    <span class="str">"tailChars"</span>: <span class="var">900</span>        <span class="cmt">// keep last 900 chars</span>
+  },
+  <span class="str">"hardClear"</span>: {
+    <span class="str">"enabled"</span>: <span class="kw">true</span>,
+    <span class="str">"placeholder"</span>: <span class="str">"[Old tool output cleared]"</span>
+  }
+}
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ 9. QUICK START -->
+<section id="install">
+<div class="container">
+  <div class="section-label">09 — Quick Start</div>
+  <h2>Getting Started</h2>
+  <p>
+    OpenClaw requires <strong>Node.js 22+</strong> and an API key from your chosen LLM provider.
+    For best quality, use the latest frontier model available from your preferred provider.
+  </p>
+
+  <div class="step-grid">
+    <div class="step-card">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-title">Install OpenClaw globally</div>
+        <div class="step-desc">
+          <code>npm install -g openclaw@latest</code> — installs the CLI and Gateway process.
+        </div>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-title">Run the onboarding wizard</div>
+        <div class="step-desc">
+          <code>openclaw onboard --install-daemon</code> — interactive guided setup that configures your first agent, sets an API key, and installs the Gateway as a system service.
+        </div>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-title">Pair a channel</div>
+        <div class="step-desc">
+          <code>openclaw channels login</code> — follow the prompts to pair WhatsApp (QR code), Telegram (bot token), Discord, or another platform.
+        </div>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">4</div>
+      <div>
+        <div class="step-title">Start the Gateway</div>
+        <div class="step-desc">
+          <code>openclaw gateway --port 18789</code> — starts the Gateway. If installed as a daemon, it starts automatically at boot. Access the Control UI at <code>http://127.0.0.1:18789/</code>.
+        </div>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">5</div>
+      <div>
+        <div class="step-title">Install your first skills</div>
+        <div class="step-desc">
+          Browse <a href="https://github.com/VoltAgent/awesome-openclaw-skills" target="_blank">awesome-openclaw-skills</a> on GitHub. Paste a skill's GitHub URL into your agent chat — it installs in the background.
+        </div>
+      </div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">6</div>
+      <div>
+        <div class="step-title">Tighten security</div>
+        <div class="step-desc">
+          Edit <code>~/.openclaw/openclaw.json</code> to add <code>allowFrom</code> allowlists for each channel, enable <code>gateway.auth.token</code> for the Control UI, and review tool policy if exposing to the internet.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Useful CLI Commands</h3>
+  <table class="comparison-table">
+    <thead>
+      <tr><th>Command</th><th>What It Does</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>openclaw onboard</code></td><td>Interactive setup wizard</td></tr>
+      <tr><td><code>openclaw gateway --port 18789</code></td><td>Start the Gateway</td></tr>
+      <tr><td><code>openclaw channels login</code></td><td>Pair a new messaging channel</td></tr>
+      <tr><td><code>openclaw channels status --probe</code></td><td>Check channel connection health</td></tr>
+      <tr><td><code>openclaw agents list --bindings</code></td><td>List all agents with their channel bindings</td></tr>
+      <tr><td><code>openclaw gateway restart</code></td><td>Restart the Gateway process</td></tr>
+    </tbody>
+  </table>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ FOOTER -->
+<footer>
+<div class="container">
+  <p>
+    OpenClaw — A Deep Technical Guide
+    <br>
+    Built for <a href="https://pages.github.com/" target="_blank">GitHub Pages</a>.
+    Content references: <a href="https://docs.openclaw.ai/" target="_blank">OpenClaw Docs</a>,
+    <a href="https://github.com/openclaw/openclaw" target="_blank">openclaw/openclaw on GitHub</a>.
+  </p>
+</div>
+</footer>
+
+<!-- ═══════════════════════════════════════════════════════ SCROLL SPY -->
+<script>
+const tocLinks = document.querySelectorAll('.toc a');
+const sections = [...tocLinks].map(a => document.querySelector(a.getAttribute('href')));
+
+function updateToc() {
+  let current = '';
+  const offset = 120;
+  sections.forEach((s, i) => {
+    if (s && s.getBoundingClientRect().top < offset) current = tocLinks[i].getAttribute('href');
+  });
+  tocLinks.forEach(a => {
+    a.classList.toggle('active', a.getAttribute('href') === current);
+  });
+}
+
+window.addEventListener('scroll', updateToc, { passive: true });
+updateToc();
+</script>
+
+</body>
+</html>
