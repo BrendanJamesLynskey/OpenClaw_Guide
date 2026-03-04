@@ -4,7 +4,7 @@
 
 A comprehensive, interactive guide to **OpenClaw** — the self-hosted, open-source gateway that connects AI coding agents to any messaging platform. Architecture, configuration, skills, memory, security, and multi-agent routing explained in full.
 
-**[View the live guide →](https://brendanjameslynskey.github.io/OpenClaw_guide/)**
+**[View the live guide →](https://brendanjameslynskey.github.io/OpenClaw_Guide/)**
 
 ## Overview
 
